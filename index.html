@@ -262,6 +262,11 @@ dialog button:active { transform: translateY(1px); }
   .demo-sequence > .demo-example > svg { height: 36px; }
   .demo-sequence > .demo-example > svg:nth-child(2) { height: 17px; }
 }
+
+/* If playback needs another gesture, make the existing sound button a retry. */
+#sound[data-audio-blocked="true"]{padding:3px;background:#f5d475;border-color:#9a702e;gap:0}
+#sound[data-audio-blocked="true"] svg{width:23px;height:23px}
+#sound[data-audio-blocked="true"] span{font-size:10px;font-weight:bold;line-height:1}
 </style><script type="text/plain" id="font-license">Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz), 
 with Reserved Font Name Lilita
 
@@ -993,6 +998,90 @@ function mapZones(d,m){const r=mapRandom((m.seed^0xdec0)>>>0),v=m.variant,line='
 }
 function fitWorldCamera(width,height){if(!world||!camera)return;world.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(world);if(box.isEmpty())return;box.expandByScalar(.18);const center=box.getCenter(new THREE.Vector3());const direction=previewMode?new THREE.Vector3(6,5.5,8):new THREE.Vector3(width<600?8:13,17,20);camera.position.copy(center).add(direction);camera.lookAt(center);camera.updateMatrixWorld(true);const view=new THREE.Box3();for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])view.expandByPoint(new THREE.Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse));const aspect=width/height,half=Math.max((view.max.y-view.min.y)/2,(view.max.x-view.min.x)/2/aspect)*(previewMode?1.1:1.07),cx=(view.max.x+view.min.x)/2,cy=(view.max.y+view.min.y)/2;camera.left=cx-half*aspect;camera.right=cx+half*aspect;camera.top=cy+half;camera.bottom=cy-half;camera.near=.1;camera.far=100;camera.updateProjectionMatrix();}
 
+// Unlock one audio context inside the user's gesture, then play embedded clips
+// through it even when a walk, animation or previous sentence ends later.
+function createNarrationPlayer({clips,enabled,onBlocked,fallback}){
+ let context=null,media=null,source=null,serial=0,pending=null,blocked=false,primed=false;
+ const buffers=new Map();
+ const markBlocked=value=>{if(blocked!==value){blocked=value;onBlocked?.(value);}};
+ const valid=id=>id===serial&&enabled();
+ function stop(){
+  serial++;pending=null;
+  if(source){source.onended=null;try{source.stop();source.disconnect();}catch{}source=null;}
+  if(media){media.onended=null;media.onerror=null;media.pause();}
+  markBlocked(false);
+ }
+ function unlock(){
+  if(!enabled())return;
+  // On supported iOS versions, route spoken instructions as playback audio.
+  try{if(navigator.audioSession)navigator.audioSession.type='playback';}catch{}
+  try{
+   const AudioContext=window.AudioContext||window.webkitAudioContext;
+   if(context?.state==='closed'){context=null;primed=false;buffers.clear();}
+   if(!context&&AudioContext)context=new AudioContext();
+   if(context){
+    // Both calls happen synchronously in pointer/touch/key handlers on iOS.
+    const resumed=context.state==='running'?Promise.resolve():context.resume();
+    if(!primed){const silent=context.createBufferSource();silent.buffer=context.createBuffer(1,1,context.sampleRate);silent.connect(context.destination);silent.onended=()=>silent.disconnect();silent.start(0);primed=true;}
+    Promise.resolve(resumed).then(()=>{if(context.state==='running'&&pending)pending();}).catch(()=>{if(pending)markBlocked(true);});
+   }else if(pending)pending();
+  }catch{if(pending)pending();}
+ }
+ function decode(key){
+  if(buffers.has(key)){const cached=buffers.get(key);buffers.delete(key);buffers.set(key,cached);return cached;}
+  const binary=atob(clips[key]),bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));
+  const decoded=new Promise((resolve,reject)=>{
+   // Support Safari versions with the callback form of decodeAudioData too.
+   const result=context.decodeAudioData(bytes.buffer,resolve,reject);
+   if(result?.then)result.then(resolve,reject);
+  });
+  buffers.set(key,decoded);
+  if(buffers.size>16)buffers.delete(buffers.keys().next().value);
+  decoded.catch(()=>{if(buffers.get(key)===decoded)buffers.delete(key);});
+  return decoded;
+ }
+ function play(text){
+  stop();if(!enabled())return;
+  const id=serial,parts=String(text).match(/[^.!?]+[.!?]?/g)||[];let index=0;
+  function next(){
+   if(!valid(id)||index>=parts.length)return;
+   const part=parts[index].trim(),key=part.toLocaleLowerCase('pt-BR').replace(/[.!?]/g,'').replace(/\s+/g,' ').trim();
+   let finished=false,fallbackStarted=false;
+   const done=()=>{if(!finished&&valid(id)){finished=true;index++;next();}};
+   function speakFallback(){if(!valid(id)||fallbackStarted)return;fallbackStarted=true;if(fallback)fallback(part,done);else done();}
+   function playMedia(){
+    if(!valid(id))return;pending=null;
+    // A single element retains its mobile playback permission across phrases.
+    media||=new Audio('data:audio/mpeg;base64,'+clips[key]);
+    media.preload='auto';media.playsInline=true;media.setAttribute?.('playsinline','');
+    media.src='data:audio/mpeg;base64,'+clips[key];
+    media.onended=done;media.onerror=()=>{if(valid(id)&&!finished)speakFallback();};
+    try{Promise.resolve(media.play()).then(()=>{if(valid(id))markBlocked(false);}).catch(error=>{
+     if(!valid(id)||finished)return;
+     if(error.name==='NotAllowedError'||error.name==='AbortError'){pending=playMedia;markBlocked(true);}
+     else{console.warn('Narração indisponível:',error.name);speakFallback();}
+    });}catch{if(valid(id)){pending=playMedia;markBlocked(true);}}
+   }
+   function attempt(){
+    if(!valid(id))return;pending=null;
+    if(!clips[key]){speakFallback();return;}
+    if(!context||context.state==='closed'){playMedia();return;}
+    if(context.state!=='running'){pending=attempt;markBlocked(true);return;}
+    decode(key).then(buffer=>{
+     if(!valid(id))return;
+     if(context.state!=='running'){pending=attempt;markBlocked(true);return;}
+     const node=context.createBufferSource();node.buffer=buffer;node.connect(context.destination);
+     node.onended=()=>{node.disconnect();if(source===node)source=null;done();};
+     source=node;node.start(0);markBlocked(false);
+    }).catch(()=>{if(valid(id))playMedia();});
+   }
+   attempt();
+  }
+  next();
+ }
+ return {play,stop,unlock,context:()=>context,get blocked(){return blocked;}};
+}
+
 'use strict';
 const $ = s => document.querySelector(s);
 const analytics=window.GameAnalytics||Object.fromEntries(['event','round','complete','end','tutorial','tutorialEnd','pickup','attempt','recycled'].map(k=>[k,()=>{}]));
@@ -1049,24 +1138,22 @@ let previewMode=true,lastTime=0,walkPhase=0,webglOK=true,resizeObs=null,pickTarg
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let raycaster,mouse,geometry,matCache=new Map(),cylinderCache=new Map();
 const voiceData=JSON.parse($('#voice-data').textContent);
-let speechToken=0,playingVoice=null,audioContext=null;
-function stopSpeech(){speechToken++;if(playingVoice){playingVoice.pause();playingVoice=null;}if('speechSynthesis'in window)speechSynthesis.cancel();}
-function narrate(text){stopSpeech();if(!S.sound)return;const token=speechToken;const parts=text.match(/[^.!?]+[.!?]?/g)||[];let i=0;
- function next(){if(token!==speechToken||!S.sound||i>=parts.length)return;const part=parts[i++].trim(),key=part.toLocaleLowerCase('pt-BR').replace(/[.!?]/g,'').replace(/\s+/g,' ').trim();
-  if(voiceData[key]){const a=new Audio('data:audio/mpeg;base64,'+voiceData[key]);playingVoice=a;a.onended=next;a.onerror=next;a.play().catch(()=>{});}
-  else if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(part);u.lang='pt-BR';u.rate=.9;u.onend=next;u.onerror=next;speechSynthesis.speak(u);}else next();}
- next();}
-function chime(){if(!S.sound)return;try{audioContext||=new(window.AudioContext||window.webkitAudioContext)();audioContext.resume();[523,659,784].forEach((f,i)=>{let o=audioContext.createOscillator(),g=audioContext.createGain(),t=audioContext.currentTime+i*.09;o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.06,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.25);o.connect(g);g.connect(audioContext.destination);o.start(t);o.stop(t+.27);});}catch{}}
+const voicePlayer=createNarrationPlayer({clips:voiceData,enabled:()=>S.sound,onBlocked:()=>soundUI(),fallback(part,next){
+ if('speechSynthesis'in window){const u=new SpeechSynthesisUtterance(part);u.lang='pt-BR';u.rate=.9;u.onend=next;u.onerror=next;speechSynthesis.speak(u);}else next();
+}});
+function stopSpeech(){voicePlayer.stop();if('speechSynthesis'in window)speechSynthesis.cancel();}
+function narrate(text){stopSpeech();if(S.sound)voicePlayer.play(text);}
+function chime(){if(!S.sound)return;try{const audioContext=voicePlayer.context();if(!audioContext||audioContext.state!=='running')return;[523,659,784].forEach((f,i)=>{let o=audioContext.createOscillator(),g=audioContext.createGain(),t=audioContext.currentTime+i*.09;o.frequency.value=f;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.06,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.25);o.connect(g);g.connect(audioContext.destination);o.start(t);o.stop(t+.27);});}catch{}}
 function currentScene(){return scenes.find(s=>s.id===S.scene);}
 function currentKind(){return S.carrying?kinds.find(k=>k.id===objects[S.carrying.id].kind):null;}
 function pressed(x){return `aria-pressed="${x}"`;}
 function focusHeading(){const h=$('main h1');if(h){h.tabIndex=-1;h.focus({preventScroll:true});}}
-function soundUI(){$('#sound').innerHTML=icon(S.sound?'sound':'mute');$('#sound').setAttribute('aria-label',S.sound?'Desligar a narração':'Ligar a narração');$('#sound').setAttribute('aria-pressed',String(S.sound));}
+function soundUI(){const blocked=S.sound&&voicePlayer.blocked,b=$('#sound');b.innerHTML=icon(S.sound?'sound':'mute')+(blocked?'<span aria-hidden="true">Toque</span>':'');b.dataset.audioBlocked=String(blocked);b.setAttribute('aria-label',blocked?'Toque para ativar a narração':S.sound?'Desligar a narração':'Ligar a narração');b.setAttribute('aria-pressed',String(S.sound));}
 function sceneChoices(){const selected=$('#modal').open&&$('#modal').dataset.mode==='next'?S.nextScene:S.scene;return scenes.map(s=>`<button class="place" data-scene="${s.id}" ${pressed(selected===s.id)}>${scenePicture(s.id)}<span>${s.name}</span></button>`).join('');}
 function swatches(name,colors,labels){return colors.map((c,i)=>`<button class="swatch" style="background:${c}" data-custom="${name}" data-value="${i}" aria-label="${labels[i]}" ${pressed(S.avatar[name]===i)}></button>`).join('');}
 function accessorySelected(value){return S.avatar.accessory===value||(S.avatar.accessory==='ambos'&&value!=='nenhum');}
 function chips(name,values){return values.map(([v,t])=>`<button class="chip" data-custom="${name}" data-value="${v}" ${pressed(name==='accessory'?accessorySelected(v):String(S.avatar[name])===String(v))}>${t}</button>`).join('');}
-function setup(edit=false){delete document.body.dataset.scene;normalizeHair();stopSpeech();S.screen=edit?'editing':'setup';S.paused=true;previewMode=true;$('#exit-game').hidden=true;$('#edit-avatar').hidden=true;
+function setup(edit=false,moveFocus=true){delete document.body.dataset.scene;normalizeHair();stopSpeech();S.screen=edit?'editing':'setup';S.paused=true;previewMode=true;$('#exit-game').hidden=true;$('#edit-avatar').hidden=true;
  $('#main').innerHTML=`<section class="setup"><div class="customizer"><div class="setup-heading"><h1>Seu personagem</h1><button class="setup-listen" data-action="setup-audio" aria-label="Ouvir como escolher seu personagem">${icon('sound')}</button></div><div class="gender" role="group" aria-label="Escolha seu personagem"><button data-custom="gender" data-value="menino" ${pressed(S.avatar.gender==='menino')}>Menino</button><button data-custom="gender" data-value="menina" ${pressed(S.avatar.gender==='menina')}>Menina</button></div>
  <div class="custom-row"><span class="row-name" id="skin-label">Pele</span><div class="options" role="group" aria-labelledby="skin-label">${swatches('skin',skinColors,['Pele clara','Pele média clara','Pele média','Pele escura','Pele mais escura'])}</div></div>
  <div class="custom-row"><span class="row-name" id="hair-label">Cabelo</span><div class="options" id="hair-options" role="group" aria-labelledby="hair-label">${hairChoices()}</div></div>
@@ -1078,7 +1165,7 @@ function setup(edit=false){delete document.body.dataset.scene;normalizeHair();st
  <div class="setup-preview">
  <div class="preview-card"><div id="preview-canvas" class="preview-canvas" role="img" aria-label="Prévia 3D do seu personagem"></div></div>
  <div class="custom-bottom">${edit?'':`<div class="small-label">Onde brincar?</div><div class="places" role="group" aria-label="Cenário">${sceneChoices()}</div>`}<button class="primary wide" data-action="${edit?'return-game':'start'}">${edit?'Voltar à brincadeira':'Vamos brincar'}${icon('arrow')}</button></div></div></section>`;
- mountRenderer($('#preview-canvas'));buildPreview();decorateSetup();focusHeading();}
+ mountRenderer($('#preview-canvas'));buildPreview();decorateSetup();if(moveFocus)focusHeading();}
 function updateCustom(name,value){if(name==='gender'&&!hairByGender[value])return;if(name==='hair'&&!hairByGender[S.avatar.gender].includes(Number(value)))return;
  if(name==='accessory'&&value!=='nenhum'){if(!['oculos','aparelho'].includes(value))return;const selected=new Set(['oculos','aparelho'].filter(accessorySelected));if(selected.has(value))selected.delete(value);else selected.add(value);value=selected.size===2?'ambos':selected.values().next().value||'nenhum';}
  S.avatar[name]=['skin','hair','hairColor','shirt'].includes(name)?Number(value):value;
@@ -1253,9 +1340,11 @@ function itemAtPointer(button,event){
  }
  return closest;
 }
+function unlockNarration(e){if(!e.target.closest?.('#sound')&&(!e.type.startsWith('key')||['Enter',' '].includes(e.key)))voicePlayer.unlock();}
+for(const type of ['pointerup','touchend','click','keydown'])document.addEventListener(type,unlockNarration,{capture:true,passive:true});
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.custom){updateCustom(b.dataset.custom,b.dataset.value);return;}if(b.matches('button[data-scene]')){const next=$('#modal').open&&$('#modal').dataset.mode==='next';analytics.event('scene_selected',{scene:b.dataset.scene});if(next)S.nextScene=b.dataset.scene;else S.scene=b.dataset.scene;document.querySelectorAll('button[data-scene]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.scene===b.dataset.scene)));narrate(scenes.find(sc=>sc.id===b.dataset.scene).name+'.');if(!next&&previewMode&&renderer&&webglOK)buildPreview();return;}
  if(b.dataset.item){requestAction({type:'item',id:itemAtPointer(b,e)});return;}if(b.dataset.bin){requestAction({type:'bin',id:b.dataset.bin});return;}
- if(b.id==='sound'){S.sound=!S.sound;analytics.event('audio_toggled',{enabled:S.sound});soundUI();if(!S.sound)stopSpeech();else narrate('Narração ligada.');return;}if(b.id==='help'){showHelp();return;}if(b.id==='exit-game'){confirmEnd();return;}if(b.id==='edit-avatar'){if(S.motion||S.revealDelay)return;analytics.event('avatar_editor_opened');S.paused=true;S.path=[];S.target=null;S.queued=null;if(actor){const p=worldPos(S.player.x,S.player.z);actor.position.set(p.x,.1,p.z);}setup(true);return;}
+ if(b.id==='sound'){if(S.sound&&voicePlayer.blocked){voicePlayer.unlock();return;}S.sound=!S.sound;analytics.event('audio_toggled',{enabled:S.sound});soundUI();if(!S.sound)stopSpeech();else{voicePlayer.unlock();narrate('Narração ligada.');}return;}if(b.id==='help'){showHelp();return;}if(b.id==='exit-game'){confirmEnd();return;}if(b.id==='edit-avatar'){if(S.motion||S.revealDelay)return;analytics.event('avatar_editor_opened');S.paused=true;S.path=[];S.target=null;S.queued=null;if(actor){const p=worldPos(S.player.x,S.player.z);actor.position.set(p.x,.1,p.z);}setup(true);return;}
  const action=b.dataset.action;
  if(['repeat-cue','replay-hint','setup-audio','demo-replay'].includes(action))analytics.event('guidance_replayed',{source:action});
  if(action==='start')beginRound();if(action==='close')closeModal();if(action==='help')showHelp();if(action==='confirm-end')confirmEnd();if(action==='end')endGame();if(action==='home')setup();if(action==='return-game'){renderGame();setCue();}
@@ -1265,5 +1354,5 @@ $('#modal').addEventListener('cancel',e=>{e.preventDefault();const mode=$('#moda
 document.addEventListener('keydown',e=>{if(S.screen!=='playing'||S.paused||e.target.closest('button,dialog'))return;const directions={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0]};if(directions[e.key]){e.preventDefault();const [dx,dz]=directions[e.key];requestAction({type:'floor',x:S.player.x+dx,z:S.player.z+dz});}});
 document.addEventListener('visibilitychange',()=>{S.suspended=document.hidden;$('#modal').classList.toggle('demo-suspended',document.hidden);if(document.hidden)stopSpeech();});
 window.addEventListener('pagehide',stopSpeech);
-$('#brand-mark').innerHTML=binPicture('plastico');$('#help').innerHTML=icon('help');$('#exit-game').innerHTML=icon('home');soundUI();setup();requestAnimationFrame(animate);
+$('#brand-mark').innerHTML=binPicture('plastico');$('#help').innerHTML=icon('help');$('#exit-game').innerHTML=icon('home');soundUI();setup(false,false);requestAnimationFrame(animate);
 </script></body></html>
