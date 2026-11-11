@@ -493,7 +493,6 @@ window.GameAnalytics = (() => {
  const params=new URLSearchParams(location.search);
  if(!config.token||!config.host)return disabled('missing_config');
  if(params.get('analytics')==='off')return disabled('analytics_off');
- if(navigator.globalPrivacyControl===true)return disabled('global_privacy_control');
  if(navigator.doNotTrack==='1')return disabled('do_not_track');
  const uid=()=>typeof crypto.randomUUID==='function'?crypto.randomUUID():[4,2,2,2,6].map(n=>Array.from(crypto.getRandomValues(new Uint8Array(n)),v=>v.toString(16).padStart(2,'0')).join('')).join('-');
  let session;
@@ -536,7 +535,7 @@ window.GameAnalytics = (() => {
   try{
    const safe={};for(const [k,v]of Object.entries(props))if(allowed.has(k)&&(['string','boolean'].includes(typeof v)||(typeof v==='number'&&Number.isFinite(v))))safe[k]=v;
    const context={...window.GameReplay?.context(),...(round?{round_id:round.id,scene:round.scene,level:round.level}:{})};
-   queue.push({uuid:uid(),distinct_id:session,event:'mr_'+name,timestamp:new Date().toISOString(),properties:{...context,...safe,app:'missao_reciclagem',app_version:'2026-11-11-analytics-1',is_test:isTest,game_id:game?.id||null,$process_person_profile:false,$geoip_disable:true,$ip:null}});
+   queue.push({uuid:uid(),distinct_id:session,event:'mr_'+name,timestamp:new Date().toISOString(),properties:{...context,...safe,app:'missao_reciclagem',app_version:'2026-11-11-analytics-2',is_test:isTest,game_id:game?.id||null,$process_person_profile:false,$geoip_disable:true,$ip:null}});
    queue=queue.filter(e=>Date.now()-Date.parse(e.timestamp)<maxAge).slice(-maxQueue);persist();schedule();
   }catch{}
  }

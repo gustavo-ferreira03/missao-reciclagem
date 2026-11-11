@@ -14,7 +14,7 @@ GitHub Pages publica a raiz da branch `main`. Para atualizar o jogo, substitua `
 
 ## Estatísticas
 
-O jogo usa PostHog para eventos de interação e gravação de sessões. O envio precisa de internet. As preferências GPC, Do Not Track e `?analytics=off` desativam a coleta. Os testes usam `?analytics_test=1`.
+O jogo usa PostHog para eventos de interação e gravação de sessões. O envio precisa de internet. O sinal GPC não bloqueia a coleta. Do Not Track e `?analytics=off` desativam a coleta. Os testes usam `?analytics_test=1`.
 
 Para diagnóstico, execute no console do navegador:
 
