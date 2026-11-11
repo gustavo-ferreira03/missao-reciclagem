@@ -267,6 +267,377 @@ dialog button:active { transform: translateY(1px); }
 #sound[data-audio-blocked="true"]{padding:3px;background:#f5d475;border-color:#9a702e;gap:0}
 #sound[data-audio-blocked="true"] svg{width:23px;height:23px}
 #sound[data-audio-blocked="true"] span{font-size:10px;font-weight:bold;line-height:1}
+
+
+/* ==========================================================================
+   PHYSICAL BUTTONS: "toy keycap" pass. Append at the very END of style.css.
+
+   One mechanical model for every real control. The model follows the
+   neobrutalism.dev button and toggle: solid ink outline, hard offset base,
+   strong flat colours. Changed for this game: the face stays RAISED at rest
+   and only sinks into its base while it is physically pressed (:active).
+
+     rest      face lifted by (--k-x, --k-y); the base shows as a hard
+               ink shadow to the lower right
+     selected  aria-pressed=true options are "latched": they rest part-way
+               down (--k-lx, --k-ly). Some base still shows, so they still
+               look pressable.
+     pressed   the face travels the full depth into its base and the shadow
+               goes to 0. Selected options go farther than their latch.
+     release   short springy return
+
+   CASCADE STRATEGY
+   Older rules in style.css press with `translate` AND with `transform`.
+   They also change border-bottom widths, padding and box-shadow per state,
+   at specificities up to (0,5,0). To stop these from stacking, this block
+   LOCKS the mechanical properties with !important on the button set below:
+   border, box-shadow, translate, transform, filter, transition, focus
+   outline and background-color (swatches excepted). Each lock reads its
+   value from --k-* custom properties. Families and states below change only
+   those tokens, never the locked properties. So movement comes from ONE
+   property (`translate`), `transform` is always none, and borders and
+   padding stay the same in every state.
+
+   TOKENS (set per family/state; every use has a fallback):
+     --k-face  face colour          --k-ink    outline + base colour
+     --k-bw    outline width        --k-x/-y   full depth of the base
+     --k-lx/-ly  latched sink       --k-sx/-sy current sink (hover/active)
+     --k-inset   inner details      --k-extra  outer ring (hint/finish)
+     --k-focus / --k-focus-offset   keyboard ring
+     --k-time / --k-curve           travel timing
+
+   NOT TOUCHED: .world-label:not(.bin-label). These are the transparent hit
+   areas over the 3D litter. They keep their centering transform, tutorial
+   ring and guide hand. Section 6 only stops the old global :active
+   translate from nudging them.
+   ========================================================================== */
+
+
+/* 1. Shared mechanics ---------------------------------------------------- */
+
+:is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+    .gender button, .chip, .swatch, .place, .scene-shortcut,
+    .bin-dock .bin-label, .fallback-controls > button, .modal button) {
+  border: var(--k-bw, 2px) solid var(--k-ink, #22424f) !important;
+  box-shadow:
+    calc(var(--k-x, 2px) - var(--k-sx, var(--k-lx, 0px)))
+    calc(var(--k-y, 4px) - var(--k-sy, var(--k-ly, 0px)))
+    0 0 var(--k-ink, #22424f),
+    var(--k-inset, 0 0 #0000),
+    var(--k-extra, 0 0 #0000) !important;
+  translate: var(--k-sx, var(--k-lx, 0px)) var(--k-sy, var(--k-ly, 0px)) !important;
+  transform: none !important;
+  filter: none !important;
+  transition:
+    translate var(--k-time, 170ms) var(--k-curve, cubic-bezier(.3, 1.55, .5, 1)),
+    box-shadow var(--k-time, 170ms) var(--k-curve, cubic-bezier(.3, 1.55, .5, 1)),
+    background-color .12s ease, border-color .12s ease, color .12s ease !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Face colour. Swatches are excluded because their colour is an inline style. */
+:is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+    .gender button, .chip, .place, .scene-shortcut,
+    .bin-dock .bin-label, .fallback-controls > button, .modal button):not(.swatch) {
+  background-color: var(--k-face, #fff6df) !important;
+}
+
+/* Keyboard focus: one obvious ring. The dock overrides the colour (section 4). */
+:is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+    .gender button, .chip, .swatch, .place, .scene-shortcut,
+    .bin-dock .bin-label, .fallback-controls > button, .modal button):focus-visible {
+  outline: 3px solid var(--k-focus, #184e9a) !important;
+  outline-offset: var(--k-focus-offset, 3px) !important;
+}
+
+/* Disabled: faded and inert. The hover and press rules below skip :disabled,
+   so a disabled control never moves. */
+:is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+    .gender button, .chip, .swatch, .place, .scene-shortcut,
+    .bin-dock .bin-label, .fallback-controls > button, .modal button):disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+/* Hover only for real mouse pointers. The face rises 1px, which makes it
+   look more pressable. Touch screens never get a stuck hover. */
+@media (hover: hover) and (pointer: fine) {
+  :is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+      .gender button, .chip, .swatch, .place, .scene-shortcut,
+      .bin-dock .bin-label, .fallback-controls > button, .modal button):hover:not(:disabled) {
+    --k-sx: var(--k-lx, 0px);
+    --k-sy: calc(var(--k-ly, 0px) - 1px);
+  }
+}
+
+/* Physically pressed: full travel into the base and a quick press-in.
+   This rule comes after the hover rule with equal specificity, so it wins. */
+:is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+    .gender button, .chip, .swatch, .place, .scene-shortcut,
+    .bin-dock .bin-label, .fallback-controls > button, .modal button):active:not(:disabled) {
+  --k-sx: var(--k-x, 2px);
+  --k-sy: var(--k-y, 4px);
+  --k-time: 50ms;
+  --k-curve: cubic-bezier(.2, .8, .4, 1);
+}
+
+
+/* 2. Families ------------------------------------------------------------
+   Depths:  large 3px/5px  (primary, dialog actions, character, scene cards,
+                            fallback objects)
+            medium 2px/4px (header, listen/repeat, chips, shortcut, bins)
+            small 2px/3px  (colour swatches)                               */
+
+/* Green main action: setup "Vamos brincar", dialog play actions, ending. */
+.primary {
+  --k-face: #3f8a4c;
+  --k-ink: #1c3f27;
+  --k-bw: 3px;
+  --k-x: 3px;
+  --k-y: 5px;
+  color: #fff8e3;
+}
+
+/* Cream secondary / round dialog actions (sound, back, home). */
+.secondary {
+  --k-face: #fff4d6;
+  --k-ink: #244b5a;
+  --k-bw: 3px;
+  --k-x: 3px;
+  --k-y: 5px;
+}
+/* An older rule (.picture-actions .round-action:not(.primary)) was hiding the
+   colour from .danger-text. This restores it on the "Sim, encerrar" button. */
+.picture-actions .round-action.danger-text { color: #944834; }
+
+/* Header: sound, help, home, avatar. */
+.icon-btn,
+.top-right .quiet {
+  --k-face: #fff1c9;
+  --k-ink: #244b60;
+  --k-bw: 2px;
+  --k-x: 2px;
+  --k-y: 4px;
+}
+/* The narration needs another tap: keep the warm yellow retry key and its
+   "Toque" label. The yellow comes from the face colour, not from the shape. */
+#sound[data-audio-blocked="true"] {
+  --k-face: #f5d475;
+  --k-ink: #6f4c14;
+}
+
+/* Listen / repeat buttons. The repeat button stays round. */
+.setup-listen,
+.cue-listen {
+  --k-face: #fff0c9;
+  --k-ink: #244b60;
+  --k-bw: 2px;
+  --k-x: 2px;
+  --k-y: 4px;
+}
+
+/* Character choice (Menino / Menina). */
+.gender button {
+  --k-face: #fff6df;
+  --k-ink: #22424f;
+  --k-bw: 3px;
+  --k-x: 3px;
+  --k-y: 5px;
+  position: relative; /* anchors the check badge */
+}
+
+/* Hairstyle / accessory / mobility chips. */
+.chip {
+  --k-face: #fff6df;
+  --k-ink: #22424f;
+  --k-bw: 2px;
+  --k-x: 2px;
+  --k-y: 4px;
+}
+/* The old rules swapped border width AND padding when a chip was selected.
+   The border width is now locked, so the padding is the same in every state.
+   Total inset is the same as the old unselected chip. */
+.options .chip,
+.options .chip[aria-pressed] { padding: 5px; }
+@media (max-width: 1060px) {
+  .options .chip,
+  .options .chip[aria-pressed] { padding: 4px; }
+}
+
+/* Skin / hair / shirt colour swatches. The colour stays inline. A cream
+   inner frame separates dark swatch colours from the dark ink outline. */
+.swatch {
+  --k-ink: #22424f;
+  --k-bw: 2px;
+  --k-x: 2px;
+  --k-y: 3px;
+  --k-inset: inset 0 0 0 2px #fff8e6;
+}
+
+/* Scene cards, both in setup and in the "Onde vamos brincar?" dialog. */
+.place {
+  --k-face: #fff6df;
+  --k-ink: #22424f;
+  --k-bw: 3px;
+  --k-x: 3px;
+  --k-y: 5px;
+  position: relative; /* anchors the check badge */
+}
+
+/* "Choose another place" shortcut in the round-complete dialog. */
+.scene-shortcut {
+  --k-face: #e8ecd0;
+  --k-ink: #2d5562;
+  --k-bw: 2px;
+  --k-x: 2px;
+  --k-y: 4px;
+}
+
+/* Object buttons shown when WebGL is unavailable. */
+.fallback-controls > button {
+  --k-face: #fff0cd;
+  --k-ink: #2f5a45;
+  --k-bw: 3px;
+  --k-x: 3px;
+  --k-y: 5px;
+}
+
+/* End of the tutorial demo: keep the light-green ring that points to "Brincar". */
+.demo-finished .play-action { --k-extra: 0 0 0 4px #b8d79d; }
+
+
+/* 3. Selected (aria-pressed="true") options ------------------------------
+   Selection is shown in four ways: sunny face colour, green outline and
+   base, a latched (half-sunk) position, and a check mark (the existing ✓
+   on swatches, a drawn badge on character and scene cards). Pressing a
+   selected option still sinks it all the way down.                       */
+
+.gender button[aria-pressed="true"],
+.chip[aria-pressed="true"],
+.place[aria-pressed="true"] {
+  --k-face: #f4d57a;
+  --k-ink: #2a6239;
+}
+.swatch[aria-pressed="true"] { --k-ink: #2a6239; }
+
+/* Each place keeps its own colour when chosen. */
+.place[data-scene="escola"][aria-pressed="true"] { --k-face: #f4d57a; }
+.place[data-scene="casa"][aria-pressed="true"]   { --k-face: #c7e0a3; }
+.place[data-scene="praia"][aria-pressed="true"]  { --k-face: #a9dbe8; }
+
+/* Latch depth, always shallower than the full press. */
+.gender button[aria-pressed="true"],
+.place[aria-pressed="true"]  { --k-lx: 1px; --k-ly: 3px; }
+.chip[aria-pressed="true"]   { --k-lx: 1px; --k-ly: 2px; }
+.swatch[aria-pressed="true"] { --k-lx: 1px; --k-ly: 1px; }
+
+/* Check badge for character and scene cards. It is drawn with borders and
+   has empty `content`, so it adds nothing to the button's accessible name. */
+.gender button[aria-pressed="true"]::before,
+.place[aria-pressed="true"]::before,
+.gender button[aria-pressed="true"]::after,
+.place[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.gender button[aria-pressed="true"]::before,
+.place[aria-pressed="true"]::before {
+  top: -7px;
+  right: -7px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #fff8e6;
+  border-radius: 50%;
+  background: #2a6239;
+  box-shadow: 1px 2px 0 #1b3f26;
+}
+.gender button[aria-pressed="true"]::after,
+.place[aria-pressed="true"]::after {
+  top: -3px;
+  right: 0;
+  width: 6px;
+  height: 10px;
+  border: solid #fff8e6;
+  border-width: 0 2.5px 2.5px 0;
+  rotate: 45deg;
+}
+
+
+/* 4. Bin dock: raised keys in a dark tray --------------------------------
+   Each bin is a cream key with the bin colour as a band on top. The band
+   is an inset shadow, so the outline can be the same width on every side
+   and never changes. The tray gets a little more gap and bottom padding so
+   each key's base and the hint ring have room. With 5 bins at 320px wide
+   the inner width per key is about 48px, the same as before this change. */
+
+.child-game .bin-dock,
+.child-game .bin-dock[data-count] {
+  gap: 6px;
+  padding: 6px 8px max(8px, env(safe-area-inset-bottom));
+}
+@media (max-width: 760px) {
+  .child-game .bin-dock,
+  .child-game .bin-dock[data-count] {
+    gap: 4px;
+    padding-inline: 4px;
+  }
+}
+
+.child-game .bin-dock .bin-label {
+  --k-face: #fff4d6;
+  --k-ink: #132f3b;
+  --k-bw: 2px;
+  --k-x: 2px;
+  --k-y: 4px;
+  --k-inset: inset 0 5px 0 var(--bin-color, #8da69e);
+  --k-focus: #fff8e6;
+  --k-focus-offset: 2px;
+  padding: 6px 1px 3px; /* same total vertical inset as the old 5px top border + padding */
+  color: #203e4f;
+}
+
+/* Level 0 while carrying an object: every bin is a live choice. Brighter
+   face and a thicker colour band. */
+.child-game .bin-dock .bin-label.is-choice {
+  --k-face: #fffbef;
+  --k-inset: inset 0 7px 0 var(--bin-color, #8da69e);
+}
+
+/* The bin to try after a wrong answer: yellow face and a yellow ring
+   outside the ink outline. */
+.child-game .bin-dock .bin-label.is-hint {
+  --k-face: #ffe48a;
+  --k-extra: 0 0 0 3px #ffdd70;
+  z-index: 1;
+}
+
+.child-game .bin-dock .bin-label:focus-visible { z-index: 2; }
+
+
+/* 5. Reduced motion ------------------------------------------------------
+   No travel animation: the press, the latch and the release all happen at
+   once. The pressed position stays fully visible. This block needs its own
+   rule because the old `*{transition:none!important}` loses to the
+   !important lock above on specificity. */
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.primary, .secondary, .icon-btn, .top-right .quiet, .setup-listen, .cue-listen,
+      .gender button, .chip, .swatch, .place, .scene-shortcut,
+      .bin-dock .bin-label, .fallback-controls > button, .modal button) {
+    transition: none !important;
+  }
+}
+
+
+/* 6. 3D-world hit areas stay still ---------------------------------------
+   The old `button:not(:disabled):active{translate:0 2px}` also nudged the
+   invisible litter targets. They keep only their centering transform. */
+
+.board-overlay .world-label:not(.bin-label),
+.board-overlay .world-label:not(.bin-label):active { translate: none; }
 </style><script type="text/plain" id="font-license">Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz), 
 with Reserved Font Name Lilita
 
@@ -1341,6 +1712,8 @@ function itemAtPointer(button,event){
  return closest;
 }
 function unlockNarration(e){if(!e.target.closest?.('#sound')&&(!e.type.startsWith('key')||['Enter',' '].includes(e.key)))voicePlayer.unlock();}
+// Safari enables touch :active feedback when the body handles touchstart.
+document.body.addEventListener('touchstart',()=>{},{passive:true});
 for(const type of ['pointerup','touchend','click','keydown'])document.addEventListener(type,unlockNarration,{capture:true,passive:true});
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.custom){updateCustom(b.dataset.custom,b.dataset.value);return;}if(b.matches('button[data-scene]')){const next=$('#modal').open&&$('#modal').dataset.mode==='next';analytics.event('scene_selected',{scene:b.dataset.scene});if(next)S.nextScene=b.dataset.scene;else S.scene=b.dataset.scene;document.querySelectorAll('button[data-scene]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.scene===b.dataset.scene)));narrate(scenes.find(sc=>sc.id===b.dataset.scene).name+'.');if(!next&&previewMode&&renderer&&webglOK)buildPreview();return;}
  if(b.dataset.item){requestAction({type:'item',id:itemAtPointer(b,e)});return;}if(b.dataset.bin){requestAction({type:'bin',id:b.dataset.bin});return;}
