@@ -1268,6 +1268,11 @@ function artPreviewPlace(island,scene){
 function artPreview(){newWorld();const island=new THREE.Group();world.add(island);const scene=S.scene||'escola',sand=scene==='praia',home=scene==='casa';
  artBox(island,3.8,.31,3.3,sand?'#b79b68':'#a78154',0,-.2,0,.07);artBox(island,3.88,.095,3.38,sand?'#edcc8b':home?'#c6ad80':'#8eb367',0,.0,0,.035);
  artPreviewPlace(island,scene);document.getElementById('preview-canvas')?.setAttribute('data-place',scene);
+ // Fit the place plus a fixed avatar envelope, never the chosen hairstyle.
+ // The envelope includes the walking/seated models and their preview turns.
+ const frame=new THREE.Box3().setFromObject(island);
+ frame.union(new THREE.Box3(new THREE.Vector3(-.85,.05,-.7),new THREE.Vector3(.85,2.45,1.1)));
+ world.userData.previewFrame={min:frame.min.toArray(),max:frame.max.toArray()};
  previewActor=artCharacter();previewActor.position.set(0,.085,.2);previewActor.rotation.y=-.28;previewActor.scale.setScalar(1.12);island.add(previewActor);camera.position.set(6,5.5,8);camera.lookAt(0,.75,0);resize();}
 function artTick(t){if(reduced||!world)return;const a=previewMode?previewActor:actor;if(a?.userData.blink){const phase=(t%5100)/5100;a.userData.blink.scale.y=phase>.965?Math.max(.12,Math.abs(phase-.9825)/.0175):1;}if(a?.userData.head&&!S.motion&&!S.path.length){a.userData.head.rotation.y=Math.sin(t*.00065)*.035;}if(S.scene==='praia'&&!previewMode&&decorRoot)decorRoot.children.forEach(g=>{if(g.userData.artWave!==undefined)g.position.z=(g.userData.baseZ??(-5.15-g.userData.artWave*.92))+Math.sin(t*.00055+g.userData.artWave)*.045;});}
 
@@ -1367,7 +1372,7 @@ function mapZones(d,m){const r=mapRandom((m.seed^0xdec0)>>>0),v=m.variant,line='
   for(let i=0;i<4;i++)artCylinder(d,.07,.11,.04,'#f9e3bc',-4+r()*8,.12,-3.2+r()*5,6);
  }
 }
-function fitWorldCamera(width,height){if(!world||!camera)return;world.updateMatrixWorld(true);const box=new THREE.Box3().setFromObject(world);if(box.isEmpty())return;box.expandByScalar(.18);const center=box.getCenter(new THREE.Vector3());const direction=previewMode?new THREE.Vector3(6,5.5,8):new THREE.Vector3(width<600?8:13,17,20);camera.position.copy(center).add(direction);camera.lookAt(center);camera.updateMatrixWorld(true);const view=new THREE.Box3();for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])view.expandByPoint(new THREE.Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse));const aspect=width/height,half=Math.max((view.max.y-view.min.y)/2,(view.max.x-view.min.x)/2/aspect)*(previewMode?1.1:1.07),cx=(view.max.x+view.min.x)/2,cy=(view.max.y+view.min.y)/2;camera.left=cx-half*aspect;camera.right=cx+half*aspect;camera.top=cy+half;camera.bottom=cy-half;camera.near=.1;camera.far=100;camera.updateProjectionMatrix();}
+function fitWorldCamera(width,height){if(!world||!camera)return;world.updateMatrixWorld(true);const frame=previewMode&&world.userData.previewFrame;const box=frame?new THREE.Box3(new THREE.Vector3().fromArray(frame.min),new THREE.Vector3().fromArray(frame.max)):new THREE.Box3().setFromObject(world);if(box.isEmpty())return;box.expandByScalar(.18);const center=box.getCenter(new THREE.Vector3());const direction=previewMode?new THREE.Vector3(6,5.5,8):new THREE.Vector3(width<600?8:13,17,20);camera.position.copy(center).add(direction);camera.lookAt(center);camera.updateMatrixWorld(true);const view=new THREE.Box3();for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])view.expandByPoint(new THREE.Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse));const aspect=width/height,half=Math.max((view.max.y-view.min.y)/2,(view.max.x-view.min.x)/2/aspect)*(previewMode?1.1:1.07),cx=(view.max.x+view.min.x)/2,cy=(view.max.y+view.min.y)/2;camera.left=cx-half*aspect;camera.right=cx+half*aspect;camera.top=cy+half;camera.bottom=cy-half;camera.near=.1;camera.far=100;camera.updateProjectionMatrix();}
 
 // Unlock one audio context inside the user's gesture, then play embedded clips
 // through it even when a walk, animation or previous sentence ends later.
