@@ -268,6 +268,17 @@ dialog button:active { transform: translateY(1px); }
 #sound[data-audio-blocked="true"] svg{width:23px;height:23px}
 #sound[data-audio-blocked="true"] span{font-size:10px;font-weight:bold;line-height:1}
 
+/* Final polish (no locked button properties here; the PHYSICAL BUTTONS block stays last). */
+/* Chip captions were 7-9px. Keep them legible and let two-word labels wrap. */
+.options .chip > span { font-size: 11px; line-height: 1.05; max-width: 5.6em; text-align: center; }
+@media (max-width: 380px) { .options .chip > span { font-size: 10px; } }
+/* The round "listen again" key was 52x49 (an oval). */
+.child-game .cue-listen { width: 50px; height: 50px; }
+@media (max-width: 760px) { .child-game .cue-listen { width: 46px; height: 46px; } }
+/* No-WebGL notice: centred in the card. The old 150px top margin pushed it out of the ~210px phone preview. */
+.preview-canvas .preview-error { position: absolute; top: 50%; left: 50%; translate: -50% -50%; width: min(360px, calc(100% - 24px)); margin: 0; padding: 14px 16px; text-align: center; line-height: 1.45; border-radius: 12px; }
+@media (max-width: 760px) { .preview-canvas .preview-error { padding: 10px 12px; font-size: 13px; } }
+
 
 /* ==========================================================================
    PHYSICAL BUTTONS: "toy keycap" pass. Append at the very END of style.css.
@@ -980,6 +991,9 @@ function stage(){return STAGES[S.level];}
 function activeKinds(){return stage().bins.map(id=>kinds.find(k=>k.id===id));}
 function roundSize(){return S.items.length;}
 function visibleItem(item){return !item.done&&!item.held&&(!stage().oneAtATime||S.items.find(i=>!i.done)===item);}
+// In the guided round the next object stays out of sight while "Muito bem!" plays, so nothing
+// invites a tap that is still blocked; it appears together with its spoken cue.
+function shownItem(item){return visibleItem(item)&&!(S.revealDelay&&stage().oneAtATime);}
 function itemPrompt(id){return {pet:'Toque na garrafa.',paper:'Toque na folha.',can:'Toque na latinha.',glass:'Toque no pote.',cardboard:'Toque na caixa.',banana:'Toque na casca de banana.'}[id];}
 function firstAvailable(){return S.items.find(visibleItem);}
 function setCue(speak=true){if(S.screen!=='playing')return;const item=S.carrying||firstAvailable();if(!item)return;const message=S.carrying?'Agora, escolha uma lixeira. Olhe os desenhos nas lixeiras.':itemPrompt(item.id);feedback(S.carrying?'Escolha uma lixeira':itemPrompt(item.id),'','idle',speak?message:null);}
@@ -999,7 +1013,7 @@ function binPictureForCue(item,type){
  if(type==='success')return binPicture(objects[item.id].kind);
  return neutralBin();
 }
-function positionGuide(){const hand=$('#guide-hand');if(!hand)return;const target=S.path.length||S.motion||S.paused||S.carrying?null:S.level===0?labels.find(l=>l.type==='item'&&visibleItem(l.item)):null;hand.hidden=!target;if(target){hand.style.left=target.el.style.left;hand.style.top=target.el.style.top;}}
+function positionGuide(){const hand=$('#guide-hand');if(!hand)return;const target=S.path.length||S.motion||S.paused||S.carrying||S.revealDelay?null:S.level===0?labels.find(l=>l.type==='item'&&shownItem(l.item)&&l.el.style.left):null;hand.hidden=!target;if(target){hand.style.left=target.el.style.left;hand.style.top=target.el.style.top;}}
 
 const demoObjective='Para reciclar, coloque cada objeto na lixeira certa.';
 
@@ -1021,7 +1035,7 @@ function playDemo(first=false){
   </div>
   <div class="picture-actions">
    <button class="secondary round-action" data-action="demo-replay" aria-label="Ver e ouvir a demonstração de novo">${icon('repeat')}</button>
-   <button class="primary play-action" data-action="demo-play" aria-label="Agora é a sua vez, começar a brincar">${icon('play')}<span>Sua vez!</span></button>
+   <button class="primary play-action" data-action="demo-play" autofocus aria-label="Agora é a sua vez, começar a brincar">${icon('play')}<span>Sua vez!</span></button>
   </div>`,'demo');
  narrate(`${demoObjective} Toque na garrafa.`);
 }
@@ -1073,8 +1087,9 @@ function animatePickup(m,p){
 function animateDiscard(m,p){
  const wp=worldPos(m.bin.x,m.bin.z),lid=m.bin.mesh?.userData.lid,arm=actor.userData.arms[1];
  actor.rotation.y=turnToward(m.startRotation,faceAngle(actor,wp.x,wp.z),span(p,0,.25));
- // 1) lid opens, 2) object arcs over the mouth and drops in, 3) lid closes with a small settle.
- if(lid)lid.rotation.x=p<.72?-1.1*ease(span(p,0,.25)):-1.1*(1-easeOutBack(span(p,.72,1)));
+ // 1) lid opens, 2) object arcs over the mouth and drops in, 3) lid falls shut and bounces up once.
+ // The bounce stays on the open side (rotation <= 0) so the lid never sinks into the rim.
+ if(lid){const shut=span(p,.72,.9);lid.rotation.x=p<.72?-1.1*ease(span(p,0,.25)):shut<1?-1.1*(1-shut*shut):-.12*Math.sin(span(p,.9,1)*Math.PI);}
  const toss=Math.sin(span(p,.15,.6)*Math.PI);
  arm.rotation.x=p<.6?-.8-toss*.55:-.8*(1-ease(span(p,.6,1)));
  if(reduced){if(lid)lid.rotation.x=-1.1;arm.rotation.x=-.8;if(carryMesh)carryMesh.visible=false;return;}
@@ -1088,6 +1103,17 @@ function animateDiscard(m,p){
 function advanceMotion(dt){const m=S.motion;if(!m||S.paused)return;m.elapsed+=dt;const p=Math.min(1,m.elapsed/m.duration);
  if(actor){if(actor.rotation.order!=='YXZ')actor.rotation.order='YXZ';if(m.type==='pickup')animatePickup(m,p);else animateDiscard(m,p);}
  if(p===1){if(m.bin?.mesh?.userData.lid)m.bin.mesh.userData.lid.rotation.x=0;if(m.item?.plate)m.item.plate.scale.setScalar(1);S.motion=null;if(actor){actor.position.y=.1;actor.rotation.x=0;actor.userData.arms[0].rotation.x=0;}if(m.type==='pickup')finishPickup(m.item);else finishDiscard(m.item,m.bin);}}
+// Guided reveal: the object grows from its plate with a small toy-like overshoot.
+function startReveal(item){if(!item?.mesh||reduced)return;item.pop=0;item.mesh.scale.setScalar(.001);if(item.plate)item.plate.scale.setScalar(.001);}
+function advanceReveal(dt){for(const item of S.items){if(item.pop===undefined)continue;
+ if(!item.mesh||S.motion?.item===item)item.pop=1;else item.pop=Math.min(1,item.pop+dt/.38);
+ const grow=item.pop===1?1:easeOutBack(item.pop);
+ if(item.mesh)item.mesh.scale.setScalar(ITEM_SCALE*Math.max(.001,grow));
+ if(item.plate)item.plate.scale.setScalar(Math.max(.001,Math.min(1,item.pop*2.5)));
+ if(item.pop===1)delete item.pop;}}
+// Wrong bin: its lid gives two small knocks and stays shut. The carried object is kept.
+function advanceRattle(dt){const r=S.rattle;if(!r)return;r.t+=dt;const p=Math.min(1,r.t/.5),lid=r.kind?.mesh?.userData.lid;
+ if(lid)lid.rotation.x=p<1?-.14*Math.abs(Math.sin(p*Math.PI*2))*(1-p):0;if(p===1)S.rattle=null;}
 function cheer(){S.cheer=1.1;const host=$('#celebration');if(host){host.innerHTML=icon('check');host.classList.remove('show');void host.offsetWidth;host.classList.add('show');}}
 function speakCustom(name,value){const v={gender:{menino:'Menino.',menina:'Menina.'},hair:['Cabelo curto.','Cabelo cacheado.','Cabelo comprido.','Cabelo com tranças.'],accessory:{nenhum:'Sem acessórios.',oculos:'Óculos.',aparelho:'Aparelho auditivo.',ambos:'Óculos. Aparelho auditivo.'},mobility:{pe:'A pé.',cadeira:'Cadeira de rodas.'}};if(v[name])narrate(v[name][value]);else {const b=document.querySelector(`[data-custom="${name}"][data-value="${value}"]`);if(b?.getAttribute('aria-label'))narrate(b.getAttribute('aria-label')+'.');}}
 function decorateSetup(){document.querySelectorAll('.gender button').forEach(b=>{b.innerHTML=portrait(b.dataset.value==='menina'?2:0,b.dataset.value)+`<span>${b.dataset.value==='menina'?'Menina':'Menino'}</span>`;});document.querySelectorAll('[data-custom="hair"]').forEach(b=>{b.setAttribute('aria-label',hairs[Number(b.dataset.value)]);b.innerHTML=portrait(Number(b.dataset.value))+`<span>${hairs[Number(b.dataset.value)]}</span>`;});document.querySelectorAll('[data-custom="accessory"]').forEach(b=>{b.innerHTML=icon({nenhum:'face',oculos:'glasses',aparelho:'ear'}[b.dataset.value])+`<span>${b.textContent}</span>`;});document.querySelectorAll('[data-custom="mobility"]').forEach(b=>{b.innerHTML=icon(b.dataset.value==='pe'?'walk':'wheelchair')+`<span>${b.textContent}</span>`;});const primary=$('.custom-bottom .primary');if(primary)primary.innerHTML=icon('play')+`<span>${S.screen==='editing'?'Continuar':'Brincar'}</span>`;}
@@ -1134,7 +1160,9 @@ function artCharacter(){const g=new THREE.Group(),a=S.avatar,skin=skinColors[a.s
  const blink=new THREE.Group();head.add(blink);for(const x of [-.145,.145]){artBox(blink,.12,.115,.027,'#fff9e8',x,.055,.286,.014);artBox(blink,.057,.075,.025,'#273531',x+.008,.052,.307,.007);artBox(blink,.017,.021,.009,'#fffdf0',x+.015,.075,.323,.002);artBox(head,.13,.033,.027,hair,x,.16,.291,.006);artBox(head,.08,.028,.02,artTint(skin,'#d87865',.27),x,-.10,.286,.006);}
  artTube(head,[[-.075,-.14,.292],[0,-.165,.303],[.075,-.14,.292]],.012,'#8a503d',5);
  artHair(head,a.hair,hair,shirt);
- if(['oculos','ambos'].includes(a.accessory)){for(const x of [-.145,.145]){artBox(head,.205,.027,.035,'#354959',x,.12,.332,.005);artBox(head,.205,.027,.035,'#354959',x,-.015,.332,.005);for(const dx of [-.09,.09])artBox(head,.025,.14,.035,'#354959',x+dx,.052,.332,.005);}artBox(head,.09,.028,.036,'#354959',0,.065,.332,.005);for(const x of [-.28,.28])artBox(head,.025,.035,.35,'#354959',x,.08,.17,.005);}
+ if(['oculos','ambos'].includes(a.accessory)){for(const x of [-.145,.145]){artBox(head,.205,.027,.035,'#354959',x,.12,.332,.005);artBox(head,.205,.027,.035,'#354959',x,-.015,.332,.005);for(const dx of [-.09,.09])artBox(head,.025,.14,.035,'#354959',x+dx,.052,.332,.005);}artBox(head,.09,.028,.036,'#354959',0,.065,.332,.005);
+  // Arms run along the outside of the head (half-width .31) at brow height, above the ear and hearing aid; a short end piece joins them to the frame.
+  for(const x of [-.322,.322]){artBox(head,.025,.027,.36,'#354959',x,.12,.165,.005);artBox(head,.085,.027,.035,'#354959',x*.885,.12,.332,.005);}}
  if(['aparelho','ambos'].includes(a.accessory)){artBox(head,.09,.19,.13,'#4d75b2',.37,-.015,-.035,.025);artTube(head,[[.36,.07,.005],[.38,.055,.08],[.345,-.04,.10]],.018,'#d8b58d',5);}
  const arms=[];for(const side of [-1,1]){const arm=new THREE.Group();arm.position.set(side*(girl?.345:.37),1.11,0);g.add(arm);
   if(girl){artBox(arm,.23,.17,.31,shirt,0,-.045,0,.06);artBox(arm,.2,.035,.27,trim,0,-.135,0,.01);}// puffed sleeve
@@ -1510,7 +1538,8 @@ function hairChoices(){return chips('hair',hairByGender[S.avatar.gender].map(i=>
 function normalizeHair(){const allowed=hairByGender[S.avatar.gender]||hairByGender.menino;if(!allowed.includes(S.avatar.hair))S.avatar.hair=allowed[0];}
 const S={screen:'setup',scene:'escola',nextScene:null,level:0,sound:true,demo:null,motion:null,cheer:0,revealDelay:0,celebrated:null,avatar:{gender:'menino',skin:2,hair:0,hairColor:0,shirt:0,accessory:'nenhum',mobility:'pe'},player:{x:5,z:7},path:[],target:null,queued:null,carrying:null,items:[],done:[],paused:false,hint:null,feedback:'idle',step:0,map:null,suspended:false};
 let renderer=null,world=null,camera=null,actor=null,previewActor=null,carryMesh=null,labels=[],gameRoot=null,decorRoot=null,routeRoot=null;
-let previewMode=true,lastTime=0,walkPhase=0,webglOK=true,resizeObs=null,pickTargets=[],floorMesh=null,focusBeforeModal=null;
+let previewMode=true,lastTime=0,walkPhase=0,webglOK=true,resizeObs=null,pickTargets=[],floorMesh=null,focusBeforeModal=null,keyboardPlay=false;
+const ITEM_SCALE=1.22;
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let raycaster,mouse,geometry,matCache=new Map(),cylinderCache=new Map();
 const voiceData=JSON.parse($('#voice-data').textContent);
@@ -1543,12 +1572,13 @@ function setup(edit=false,moveFocus=true){delete document.body.dataset.scene;nor
  <div class="custom-bottom">${edit?'':`<div class="small-label">Onde brincar?</div><div class="places" role="group" aria-label="Cenário">${sceneChoices()}</div>`}<button class="primary wide" data-action="${edit?'return-game':'start'}">${edit?'Voltar à brincadeira':'Vamos brincar'}${icon('arrow')}</button></div></div></section>`;
  mountRenderer($('#preview-canvas'));buildPreview();decorateSetup();if(moveFocus)focusHeading();}
 function updateCustom(name,value){if(name==='gender'&&!hairByGender[value])return;if(name==='hair'&&!hairByGender[S.avatar.gender].includes(Number(value)))return;
+ const requestedValue=value;
  if(name==='accessory'&&value!=='nenhum'){if(!['oculos','aparelho'].includes(value))return;const selected=new Set(['oculos','aparelho'].filter(accessorySelected));if(selected.has(value))selected.delete(value);else selected.add(value);value=selected.size===2?'ambos':selected.values().next().value||'nenhum';}
  S.avatar[name]=['skin','hair','hairColor','shirt'].includes(name)?Number(value):value;
  if(name==='gender'){S.avatar.hair=hairByGender[value][0];$('#hair-options').innerHTML=hairChoices();}
  document.querySelectorAll('[data-custom]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.custom==='accessory'?accessorySelected(b.dataset.value):String(S.avatar[b.dataset.custom])===b.dataset.value)));
- buildPreview();decorateSetup();speakCustom(name,value);}
-function beginRound(level=0,seed){S.level=Math.max(0,Math.min(2,level));S.path=[];S.target=null;S.queued=null;S.carrying=null;S.done=[];S.hint=null;S.feedback='idle';S.step=0;S.motion=null;S.demo=null;S.cheer=0;S.revealDelay=0;S.celebrated=null;
+ buildPreview();decorateSetup();speakCustom(name,name==='accessory'&&value==='ambos'?requestedValue:value);}
+function beginRound(level=0,seed){S.level=Math.max(0,Math.min(2,level));S.path=[];S.target=null;S.queued=null;S.carrying=null;S.done=[];S.hint=null;S.feedback='idle';S.step=0;S.motion=null;S.demo=null;S.cheer=0;S.revealDelay=0;S.celebrated=null;S.rattle=null;
  S.map=createMap(S.scene,S.level,seed===undefined?mapSeed():seed);S.player={...S.map.spawn};S.items=S.map.items.map(i=>({...i,done:false,held:false,mesh:null,plate:null}));
  analytics.round(S.scene,S.level,S.items.length,webglOK?'webgl':'buttons');
  renderGame();if(S.level===0)playDemo(true);else setCue();}
@@ -1559,8 +1589,8 @@ function renderGame(){document.body.dataset.scene=S.scene;previewMode=false;S.sc
 function feedback(title,sub='',type='idle',spoken=null){S.feedback=type;S.lastSpoken=spoken||S.lastSpoken;$('#feedback-title').textContent=title;$('#feedback-sub').textContent=sub;$('#feedback').className='child-cue '+type;$('#spoken-status').textContent=title+(sub?' '+sub:'');updatePictureCue(type);if(spoken)narrate(spoken);}
 function updateHUD(){if(S.screen!=='playing')return;$('#count').textContent=`${S.done.length} de ${roundSize()}`;$('.child-progress').setAttribute('aria-valuenow',String(S.done.length));document.querySelectorAll('.progress-object').forEach((el,i)=>el.classList.toggle('done',S.items[i].done));
  $('#hand-art').innerHTML=S.carrying?objectPicture(S.carrying.id):icon('hand');$('#hand-art').classList.toggle('holding',!!S.carrying);$('#hand-name').textContent=S.carrying?objects[S.carrying.id].name:'Pronto para recolher';
- S.items.forEach(i=>{const visible=visibleItem(i);if(i.mesh)i.mesh.visible=visible;if(i.plate)i.plate.visible=visible;});
- labels.forEach(l=>{if(l.type==='item'){l.el.hidden=!visibleItem(l.item);l.el.disabled=!!S.carrying||!!S.motion||!!S.revealDelay||S.done.length===roundSize();l.el.classList.toggle('is-guide',!S.carrying&&!S.motion&&S.level===0&&visibleItem(l.item));}else{l.el.disabled=!!S.motion||!!S.revealDelay;l.el.classList.toggle('is-hint',S.hint===l.kind.id);l.el.classList.toggle('is-choice',!!S.carrying&&S.level===0&&!S.hint);l.el.setAttribute('aria-label',`Lixeira de ${l.kind.name.toLowerCase()}${S.carrying?', levar '+objects[S.carrying.id].name.toLowerCase():''}`);}});
+ S.items.forEach(i=>{const visible=shownItem(i);if(i.mesh)i.mesh.visible=visible;if(i.plate)i.plate.visible=visible;});
+ labels.forEach(l=>{if(l.type==='item'){l.el.hidden=!shownItem(l.item);l.el.disabled=!!S.carrying||!!S.motion||!!S.revealDelay||S.done.length===roundSize();l.el.classList.toggle('is-guide',!S.carrying&&!S.motion&&!S.revealDelay&&S.level===0&&shownItem(l.item));}else{l.el.disabled=!!S.motion||!!S.revealDelay;l.el.classList.toggle('is-hint',S.hint===l.kind.id);l.el.classList.toggle('is-choice',!!S.carrying&&S.level===0&&!S.hint);l.el.setAttribute('aria-label',`Lixeira de ${l.kind.name.toLowerCase()}${S.carrying?', levar '+objects[S.carrying.id].name.toLowerCase():''}`);}});
  updatePictureCue(S.feedback);updateFallback();positionGuide();}
 function updateFallback(){
  const host=$('#fallback-controls');
@@ -1569,7 +1599,7 @@ function updateFallback(){
   host.innerHTML=`<div class="fallback-held" aria-hidden="true">${objectPicture(S.carrying.id)}</div>`;
   return;
  }
- host.innerHTML=S.items.filter(visibleItem).map(item=>
+ host.innerHTML=S.items.filter(shownItem).map(item=>
   `<button data-item="${item.id}" aria-label="Pegar ${objects[item.id].name.toLowerCase()}" ${S.motion||S.revealDelay?'disabled':''}>${objectPicture(item.id)}</button>`
  ).join('');
 }
@@ -1640,7 +1670,7 @@ function buildGameWorld(){
   if(item.done||item.held)continue;
   const point=worldPos(item.x,item.z),mesh=makeWaste(item.id);
   mesh.position.set(point.x,0,point.z);
-  mesh.scale.setScalar(1.22);
+  mesh.scale.setScalar(ITEM_SCALE);
   const bounds=new THREE.Box3().setFromObject(mesh);
   mesh.position.y=plateY+plateHeight/2-bounds.min.y;
   mesh.userData={action:'item',id:item.id};
@@ -1680,11 +1710,15 @@ function drawRoute(){if(!routeRoot)return;routeRoot.clear();if(reduced)return;S.
 function arrived(){const target=S.target;S.target=null;S.path=[];if(routeRoot)routeRoot.clear();if(!target)return;if(target.type==='item')pickUp(target.id);if(target.type==='bin')discard(target.id);}
 function attachCarried(){if(!actor||!S.carrying)return;if(carryMesh)actor.remove(carryMesh);carryMesh=makeWaste(S.carrying.id);carryMesh.scale.setScalar(.65);carryMesh.position.set(.39,.84,.39);actor.add(carryMesh);actor.userData.arms[1].rotation.x=-.8;}
 function pickUp(id){const item=S.items.find(i=>i.id===id);if(!item||!visibleItem(item)||S.carrying)return;startMotion('pickup',item,null);}
-function discard(id){if(!S.carrying||S.motion)return;const item=S.carrying,k=currentKind();analytics.attempt(item.id,k.id,id,id===k.id);if(id!==k.id){S.hint=k.id;updateHUD();feedback('Vamos tentar de novo!','','wrong',objects[item.id].spoken+' Vai '+k.phrase+'. O objeto continua com você.');return;}startMotion('discard',item,k);}
-function finishPickup(item){analytics.pickup(item.id,objects[item.id].kind);item.held=true;S.carrying=item;S.hint=null;if(item.mesh)gameRoot.remove(item.mesh);if(item.plate)gameRoot.remove(item.plate);attachCarried();updateHUD();feedback('Escolha uma lixeira','','idle','Agora, escolha uma lixeira. Olhe os desenhos nas lixeiras.');}
+function discard(id){if(!S.carrying||S.motion)return;const item=S.carrying,k=currentKind();analytics.attempt(item.id,k.id,id,id===k.id);if(id!==k.id){S.hint=k.id;if(webglOK&&!reduced)S.rattle={kind:kinds.find(b=>b.id===id),t:0};updateHUD();feedback('Vamos tentar de novo!','','wrong',objects[item.id].spoken+' Vai '+k.phrase+'. O objeto continua com você.');return;}startMotion('discard',item,k);}
+function finishPickup(item){analytics.pickup(item.id,objects[item.id].kind);item.held=true;S.carrying=item;S.hint=null;if(item.mesh)gameRoot.remove(item.mesh);if(item.plate)gameRoot.remove(item.plate);attachCarried();updateHUD();feedback('Escolha uma lixeira','','idle','Agora, escolha uma lixeira. Olhe os desenhos nas lixeiras.');rescueFocus('#bin-dock [data-bin]');}
+// A keyboard player's focused item hides on pickup and a focused bin is disabled while the toss
+// plays, so focus would fall back to the page (or, in some browsers, stay parked on the used bin).
+// Hand it to the next step only in those cases; focus the player moved elsewhere is left alone.
+function rescueFocus(selector,stale){if(!keyboardPlay||S.screen!=='playing'||$('#modal').open)return;const a=document.activeElement;if(a&&a!==document.body&&a.isConnected&&!a.disabled&&!a.closest('[hidden]')&&!(stale&&a.matches(stale)))return;const next=[...document.querySelectorAll(selector)].find(el=>!el.disabled&&!el.closest('[hidden]'));if(next)next.focus({preventScroll:true});}
 function finishDiscard(item,k){analytics.recycled(item.id,k.id);item.done=true;item.held=false;S.done.push(item.id);S.carrying=null;S.hint=null;S.celebrated=item.id;if(actor&&carryMesh){actor.remove(carryMesh);carryMesh=null;actor.userData.arms[1].rotation.x=0;}chime();cheer();S.revealDelay=S.done.length===roundSize()?2.6:2.1;updateHUD();feedback('Muito bem!','','success','Muito bem! '+objects[item.id].spoken);}
-function worldClick(event){if(previewMode||S.paused||S.screen!=='playing'||!webglOK)return;const r=renderer.domElement.getBoundingClientRect();mouse.set((event.clientX-r.left)/r.width*2-1,-(event.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(mouse,camera);const hits=raycaster.intersectObjects(pickTargets.filter(o=>o.parent&&o.visible),true);for(const hit of hits){let o=hit.object;while(o&&!o.userData.action)o=o.parent;if(!o)continue;if(o.userData.action==='floor'){requestAction({type:'floor',x:Math.round(hit.point.x+5),z:Math.round(hit.point.z+4)});}else requestAction({type:o.userData.action,id:o.userData.id});break;}}
-function animate(t){requestAnimationFrame(animate);const dt=Math.min((t-lastTime)/1000||0,.05);lastTime=t;advanceDemo(dt);if(S.screen==='playing'&&!S.paused&&!S.suspended){advanceMotion(dt);if(S.cheer>0){S.cheer=Math.max(0,S.cheer-dt);const lift=Math.sin((1.1-S.cheer)/1.1*Math.PI);if(actor&&S.avatar.mobility==='pe'&&!reduced)actor.position.y=.1+lift*.22;if(actor&&!reduced)actor.userData.arms.forEach(a=>a.rotation.x=-lift*2.5);}if(S.revealDelay>0){S.revealDelay=Math.max(0,S.revealDelay-dt);if(S.revealDelay===0){S.celebrated=null;if(S.done.length===roundSize())showComplete();else{updateHUD();setCue();}}}}if(!renderer||!world||!camera||!webglOK)return;
+function worldClick(event){if(previewMode||S.paused||S.screen!=='playing'||!webglOK||event.button>0||event.isPrimary===false)return;keyboardPlay=false;const r=renderer.domElement.getBoundingClientRect();mouse.set((event.clientX-r.left)/r.width*2-1,-(event.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(mouse,camera);const hits=raycaster.intersectObjects(pickTargets.filter(o=>o.parent&&o.visible),true);for(const hit of hits){let o=hit.object;while(o&&!o.userData.action)o=o.parent;if(!o)continue;if(o.userData.action==='floor'){requestAction({type:'floor',x:Math.round(hit.point.x+5),z:Math.round(hit.point.z+4)});}else requestAction({type:o.userData.action,id:o.userData.id});break;}}
+function animate(t){requestAnimationFrame(animate);const dt=Math.min((t-lastTime)/1000||0,.05);lastTime=t;advanceDemo(dt);if(S.screen==='playing'&&!S.paused&&!S.suspended){advanceReveal(dt);advanceMotion(dt);advanceRattle(dt);if(S.cheer>0){S.cheer=Math.max(0,S.cheer-dt);const lift=Math.sin((1.1-S.cheer)/1.1*Math.PI);if(actor&&S.avatar.mobility==='pe'&&!reduced)actor.position.y=.1+lift*.22;if(actor&&!reduced)actor.userData.arms.forEach(a=>a.rotation.x=-lift*2.5);}if(S.revealDelay>0){S.revealDelay=Math.max(0,S.revealDelay-dt);if(S.revealDelay===0){S.celebrated=null;if(S.done.length===roundSize())showComplete();else{if(stage().oneAtATime)startReveal(firstAvailable());updateHUD();setCue();rescueFocus('#world-labels [data-item],#fallback-controls [data-item]','#bin-dock [data-bin]');}}}}if(!renderer||!world||!camera||!webglOK)return;
  if(previewMode&&previewActor){previewActor.rotation.y=-.35+(reduced?0:Math.sin(t*.0004)*.12);}
  if(!previewMode&&actor&&S.screen==='playing'&&!S.paused&&!S.suspended&&!S.motion&&!S.cheer){if(S.path.length){let next=S.path[0],p=worldPos(next.x,next.z),dx=p.x-actor.position.x,dz=p.z-actor.position.z,dist=Math.hypot(dx,dz),speed=4.4*dt;{let turn=Math.atan2(dx,dz)-actor.rotation.y;turn=Math.atan2(Math.sin(turn),Math.cos(turn));actor.rotation.y+=reduced?turn:turn*Math.min(1,dt*16);}walkPhase+=dt*13;
  if(dist<=speed){actor.position.x=p.x;actor.position.z=p.z;S.player={x:next.x,z:next.z};S.path.shift();if(S.queued){const queued=S.queued;S.queued=null;S.path=[];navigateTo(queued);}else if(!S.path.length)arrived();else drawRoute();}
@@ -1694,7 +1728,7 @@ function animate(t){requestAnimationFrame(animate);const dt=Math.min((t-lastTime
  positionLabels();if((previewMode||!S.paused)&&!S.suspended)artTick(t);renderer.render(world,camera);}
 function openModal(content,mode){stopSpeech();S.paused=true;focusBeforeModal=document.activeElement;const d=$('#modal');if(d.open)d.close();d.innerHTML=content;d.dataset.mode=mode;d.showModal();}
 function closeModal(){const d=$('#modal');if(!d.open)return;const mode=d.dataset.mode;d.close();stopSpeech();if(mode==='demo')S.demo=null;if(S.screen==='playing')S.paused=mode==='complete';if(focusBeforeModal?.isConnected)focusBeforeModal.focus({preventScroll:true});positionGuide();}
-function showHelp(first=false){analytics.event('help_requested',{screen:S.screen,...(S.carrying?{item:S.carrying.id}:{})});if(S.screen==='playing'&&S.carrying&&!first){const k=currentKind(),item=S.carrying;S.hint=k.id;updateHUD();openModal(`<h2 id="modal-title" class="sr-only">${objects[item.id].name}: ${k.name}</h2><div class="picture-hint">${objectPicture(item.id)}${icon('arrow')}${binPicture(k)}</div><div class="picture-actions"><button class="secondary round-action" data-action="replay-hint" aria-label="Ouvir a dica de novo">${icon('sound')}</button><button class="primary play-action" data-action="close" aria-label="Voltar à brincadeira e tentar de novo">${icon('play')}<span>Tentar!</span></button></div>`,'hint');narrate(objects[item.id].spoken+' Vai '+k.phrase+'.');return;}if(S.screen==='playing')playDemo(first);else narrate('Escolha seu personagem. Depois, toque no botão verde.');}
+function showHelp(first=false){analytics.event('help_requested',{screen:S.screen,...(S.carrying?{item:S.carrying.id}:{})});if(S.screen==='playing'&&S.carrying&&!first){const k=currentKind(),item=S.carrying;S.hint=k.id;updateHUD();openModal(`<h2 id="modal-title" class="sr-only">${objects[item.id].name}: ${k.name}</h2><div class="picture-hint">${objectPicture(item.id)}${icon('arrow')}${binPicture(k)}</div><div class="picture-actions"><button class="secondary round-action" data-action="replay-hint" aria-label="Ouvir a dica de novo">${icon('sound')}</button><button class="primary play-action" data-action="close" autofocus aria-label="Voltar à brincadeira e tentar de novo">${icon('play')}<span>Tentar!</span></button></div>`,'hint');narrate(objects[item.id].spoken+' Vai '+k.phrase+'.');return;}if(S.screen==='playing')playDemo(first);else narrate('Escolha seu personagem. Depois, toque no botão verde.');}
 
 function showComplete(){S.screen='playing';openModal(`<div class="big-celebrate" aria-hidden="true">${icon('check')}</div><h2 id="modal-title">Muito bem!</h2><div class="picture-review">${S.done.map(id=>`<span class="review-item" aria-label="${objects[id].name} no lugar certo">${objectPicture(id)}${icon('check')}</span>`).join('')}</div><div class="picture-actions"><button class="primary play-action" data-action="${S.level<2?'next-level':'choose-next'}" aria-label="${S.level<2?'Brincar com mais objetos':'Escolher outro lugar'}">${icon('play')}<span>${S.level<2?'Mais objetos':'Outro lugar'}</span></button><button class="secondary round-action" data-action="end" aria-label="Encerrar a brincadeira">${icon('home')}</button></div>${S.level<2?`<button class="scene-shortcut" data-action="choose-next" aria-label="Escolher outro lugar">${icon('school')}${icon('home')}${icon('beach')}</button>`:''}`,'complete');narrate('Muito bem! Você terminou esta rodada. Toque na seta para brincar mais ou na casinha para encerrar.');}
 function chooseNext(){S.nextScene=S.scene;openModal(`<h2 id="modal-title">Onde vamos brincar?</h2><div class="places picture-places" style="margin-top:23px">${sceneChoices()}</div><div class="picture-actions"><button class="primary play-action" data-action="start-next" aria-label="Brincar no lugar escolhido">${icon('play')}<span>Brincar</span></button><button class="secondary round-action" data-action="back-complete" aria-label="Voltar">${icon('repeat')}</button></div>`,'next');narrate('Escolha um lugar. Escolha escola, casa ou praia.');}
@@ -1721,7 +1755,7 @@ function unlockNarration(e){if(!e.target.closest?.('#sound')&&(!e.type.startsWit
 document.body.addEventListener('touchstart',()=>{},{passive:true});
 for(const type of ['pointerup','touchend','click','keydown'])document.addEventListener(type,unlockNarration,{capture:true,passive:true});
 document.addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.disabled)return;if(b.dataset.custom){updateCustom(b.dataset.custom,b.dataset.value);return;}if(b.matches('button[data-scene]')){const next=$('#modal').open&&$('#modal').dataset.mode==='next';analytics.event('scene_selected',{scene:b.dataset.scene});if(next)S.nextScene=b.dataset.scene;else S.scene=b.dataset.scene;document.querySelectorAll('button[data-scene]').forEach(el=>el.setAttribute('aria-pressed',String(el.dataset.scene===b.dataset.scene)));narrate(scenes.find(sc=>sc.id===b.dataset.scene).name+'.');if(!next&&previewMode&&renderer&&webglOK)buildPreview();return;}
- if(b.dataset.item){requestAction({type:'item',id:itemAtPointer(b,e)});return;}if(b.dataset.bin){requestAction({type:'bin',id:b.dataset.bin});return;}
+ if(b.dataset.item){keyboardPlay=!e.detail;requestAction({type:'item',id:itemAtPointer(b,e)});return;}if(b.dataset.bin){keyboardPlay=!e.detail;requestAction({type:'bin',id:b.dataset.bin});return;}
  if(b.id==='sound'){if(S.sound&&voicePlayer.blocked){voicePlayer.unlock();return;}S.sound=!S.sound;analytics.event('audio_toggled',{enabled:S.sound});soundUI();if(!S.sound)stopSpeech();else{voicePlayer.unlock();narrate('Narração ligada.');}return;}if(b.id==='help'){showHelp();return;}if(b.id==='exit-game'){confirmEnd();return;}if(b.id==='edit-avatar'){if(S.motion||S.revealDelay)return;analytics.event('avatar_editor_opened');S.paused=true;S.path=[];S.target=null;S.queued=null;if(actor){const p=worldPos(S.player.x,S.player.z);actor.position.set(p.x,.1,p.z);}setup(true);return;}
  const action=b.dataset.action;
  if(['repeat-cue','replay-hint','setup-audio','demo-replay'].includes(action))analytics.event('guidance_replayed',{source:action});
