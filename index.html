@@ -660,6 +660,63 @@ dialog button:active { transform: translateY(1px); }
 .privacy-actions{display:grid;gap:14px;margin:20px 0 7px}.privacy-actions button{width:100%;white-space:normal;text-align:center}
 .privacy-modal::backdrop{background:#203e4fa6}
 @media(max-width:380px){.privacy-modal{padding:18px}.privacy-modal h2{font-size:24px}body[data-scene] .top-right button{width:38px;height:40px;padding:6px}body[data-scene] .brand{font-size:14px}}
+
+/* Give the playable area the available viewport, including browser-bar changes. */
+body[data-scene] .shell{height:100dvh;min-height:0}
+body[data-scene] #main,.child-game{min-width:0;min-height:0}
+@media(max-width:760px){
+ body[data-scene] .shell{padding-inline:6px;padding-top:max(5px,env(safe-area-inset-top))}
+ body[data-scene] .topbar{gap:6px;margin-bottom:5px;padding-inline:4px}
+ body[data-scene] .brand-mark{display:none}
+ body[data-scene] .brand{font-size:16px}
+ body[data-scene] .top-right{gap:4px}
+ body[data-scene] .top-right button{width:40px;height:40px;padding:7px}
+ .child-game .board-top{padding:3px 6px;margin-bottom:0}
+ .child-game .location{font-size:17px}
+ .child-game .child-progress{padding:2px 3px;gap:2px}
+ .child-game .progress-object{width:24px;height:26px}
+ .child-game .board{width:100%;min-height:0}
+ .child-game .child-cue{min-height:48px;gap:8px;margin:3px 0;padding:2px 5px}
+ .child-game .child-cue .picture-cue{gap:10px}
+ .child-game .cue-copy{display:none}
+ .child-game .child-cue .cue-object,.child-game .child-cue .cue-destination{width:37px;height:40px}
+ .child-game .cue-listen{width:40px;height:40px;flex-shrink:0}
+ .child-game .bin-dock .bin-label{min-height:64px}
+ .child-game .bin-dock .bin-figure>svg{width:43px;height:46px}
+ .child-game .bin-dock .bin-word{font-size:12px}
+}
+/* Landscape phones: a short side tray keeps the full map height available. */
+@media(max-height:520px) and (orientation:landscape){
+ body[data-scene] .shell{padding:4px max(6px,env(safe-area-inset-right)) 4px max(6px,env(safe-area-inset-left))}
+ body[data-scene] .topbar{margin-bottom:4px}
+ body[data-scene] .brand-mark{display:none}
+ body[data-scene] .brand{font-size:16px}
+ body[data-scene] .top-right button{width:38px;height:38px;padding:6px}
+ .child-game{grid-template-columns:minmax(0,1fr) 160px;grid-template-rows:auto minmax(0,1fr) auto;gap:4px 6px}
+ .child-game .board{grid-column:1;grid-row:1/4;height:100%;width:100%;min-height:0}
+ .child-game .board-top{grid-column:2;grid-row:1;display:block;padding:3px;margin:0}
+ .child-game .location{font-size:13px;justify-content:center;gap:4px}
+ .child-game .location svg{width:20px;height:20px}
+ .child-game .child-progress{justify-content:center;gap:1px;padding:2px;margin-top:3px}
+ .child-game .progress-object{width:16px;height:18px}
+ .child-game .progress-object svg{width:14px;height:16px}
+ .child-game .child-cue{grid-column:2;grid-row:2;align-self:center;min-height:44px;margin:0;padding:2px;gap:3px}
+ .child-game .cue-copy{display:none}
+ .child-game .picture-cue{gap:2px;flex:1;justify-content:center}
+ .child-game .child-cue .cue-object,.child-game .child-cue .cue-destination{width:25px;height:30px}
+ .child-game .child-cue .cue-arrow{width:12px}
+ .child-game .cue-listen{width:36px;height:40px;flex-shrink:0;padding:6px}
+ .child-game .bin-dock,.child-game .bin-dock[data-count="3"],.child-game .bin-dock[data-count="5"]{grid-column:2;grid-row:3;position:static;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;width:100%;height:auto;padding:5px;border:2px solid #244b60;border-radius:9px;translate:none}
+ .child-game .bin-dock[data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .child-game .bin-dock .bin-label{min-height:46px;padding:2px 1px 3px;gap:0}
+ .child-game .bin-dock .bin-figure>svg{width:29px;height:30px}
+ .child-game .bin-dock .bin-word{font-size:10px;line-height:1}
+}
+@media(max-height:300px) and (orientation:landscape){
+ .child-game .bin-dock .bin-label{min-height:44px}
+ .child-game .bin-dock .bin-figure>svg{width:26px;height:26px}
+ .child-game .bin-dock .bin-word{font-size:9px}
+}
 </style><script type="text/plain" id="font-license">Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz), 
 with Reserved Font Name Lilita
 
@@ -781,20 +838,18 @@ window.GameConsent = (() => {
  }
  function open(){
   if(!dialog)return;
-  dialog.querySelector('#privacy-current').textContent=choice===true?'Sua escolha atual: coleta e gravação autorizadas.':choice===false?'Sua escolha atual: jogar sem coleta e sem gravação.':'';
+  dialog.querySelector('#privacy-current').textContent=choice===true?'Sua escolha atual: coleta e gravação autorizadas.':choice===false?'Sua escolha atual: recusar a coleta e continuar jogando.':'';
   if(!dialog.open)dialog.showModal();uiChanged();
  }
  function mount(){
   dialog=document.createElement('dialog');dialog.id='privacy-modal';dialog.className='modal privacy-modal';
   dialog.setAttribute('aria-labelledby','privacy-title');dialog.setAttribute('aria-describedby','privacy-purpose');
-  dialog.innerHTML=`<h2 id="privacy-title">Podemos registrar como você joga?</h2>
-   <p id="privacy-purpose">Para avaliar e melhorar o jogo, pedimos sua autorização para coletar:</p>
+  dialog.innerHTML=`<h2 id="privacy-title">Autorização do responsável</h2>
+   <p id="privacy-purpose">Para avaliar e melhorar o jogo, coletamos, mediante sua autorização:</p>
    <ul><li>Ações no jogo, como cliques, escolhas, acertos, erros, dicas e tempo de uso.</li><li>Uma gravação visual da tela do jogo, incluindo o personagem escolhido, para observar como a interface é usada.</li></ul>
-   <p>Não pedimos nome, e-mail ou contato. Não gravamos câmera nem microfone.</p>
-   <p><strong>Você pode jogar normalmente sem autorizar.</strong> Pode mudar sua escolha em “Privacidade”, no topo. Retirar a autorização interrompe novos registros; não apaga os dados já enviados.</p>
-   <p class="privacy-responsible">Se quem vai jogar for criança, esta escolha deve ser feita por um responsável.</p>
+   <p>Você pode alterar sua escolha em “Privacidade”, no topo. A retirada da autorização interrompe novos registros.</p>
    <p id="privacy-current" class="privacy-current" role="status"></p>
-   <div class="privacy-actions"><button class="primary" data-consent-choice="yes">Autorizar coleta e gravação</button><button class="secondary" data-consent-choice="no">Jogar sem autorizar</button></div>`;
+   <div class="privacy-actions"><button class="primary" data-consent-choice="yes">Autorizar coleta e gravação</button><button class="secondary" data-consent-choice="no">Recusar e jogar</button></div>`;
   document.body.append(dialog);
   dialog.addEventListener('click',e=>{const b=e.target.closest('[data-consent-choice]');if(b)choose(b.dataset.consentChoice==='yes');});
   dialog.addEventListener('cancel',e=>{e.preventDefault();if(choice===null)choose(false);else close();});
@@ -1482,7 +1537,29 @@ function mapZones(d,m){const r=mapRandom((m.seed^0xdec0)>>>0),v=m.variant,line='
   for(let i=0;i<4;i++)artCylinder(d,.07,.11,.04,'#f9e3bc',-4+r()*8,.12,-3.2+r()*5,6);
  }
 }
-function fitWorldCamera(width,height){if(!world||!camera)return;world.updateMatrixWorld(true);const frame=previewMode&&world.userData.previewFrame;const box=frame?new THREE.Box3(new THREE.Vector3().fromArray(frame.min),new THREE.Vector3().fromArray(frame.max)):new THREE.Box3().setFromObject(world);if(box.isEmpty())return;box.expandByScalar(.18);const center=box.getCenter(new THREE.Vector3());const direction=previewMode?new THREE.Vector3(6,5.5,8):new THREE.Vector3(width<600?8:13,17,20);camera.position.copy(center).add(direction);camera.lookAt(center);camera.updateMatrixWorld(true);const view=new THREE.Box3();for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])view.expandByPoint(new THREE.Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse));const aspect=width/height,half=Math.max((view.max.y-view.min.y)/2,(view.max.x-view.min.x)/2/aspect)*(previewMode?1.1:1.07),cx=(view.max.x+view.min.x)/2,cy=(view.max.y+view.min.y)/2;camera.left=cx-half*aspect;camera.right=cx+half*aspect;camera.top=cy+half;camera.bottom=cy-half;camera.near=.1;camera.far=100;camera.updateProjectionMatrix();}
+// Phone framing follows the playable grid, keeping scenery outside it as a backdrop.
+// A fixed frame prevents pickups or avatar changes from changing the zoom.
+function cameraFrame(width){
+ const compact=!previewMode&&width<=760;
+ if(compact)return new THREE.Box3(new THREE.Vector3(-5.8,-.5,-4.8),new THREE.Vector3(5.8,2.65,4.8));
+ const frame=previewMode&&world.userData.previewFrame;
+ return frame?new THREE.Box3(new THREE.Vector3().fromArray(frame.min),new THREE.Vector3().fromArray(frame.max)):new THREE.Box3().setFromObject(world);
+}
+function fitWorldCamera(width,height){
+ if(!world||!camera)return;
+ world.updateMatrixWorld(true);
+ const compact=!previewMode&&width<=760,box=cameraFrame(width);
+ if(box.isEmpty())return;
+ box.expandByScalar(.18);
+ const center=box.getCenter(new THREE.Vector3());
+ const direction=previewMode?new THREE.Vector3(6,5.5,8):compact&&width<height?new THREE.Vector3(3.5,18,20):new THREE.Vector3(13,17,20);
+ camera.position.copy(center).add(direction);camera.lookAt(center);camera.updateMatrixWorld(true);
+ const view=new THREE.Box3();
+ for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])view.expandByPoint(new THREE.Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse));
+ const aspect=width/height,padding=previewMode?1.1:compact?1.025:1.07;
+ const half=Math.max((view.max.y-view.min.y)/2,(view.max.x-view.min.x)/2/aspect)*padding,cx=(view.max.x+view.min.x)/2,cy=(view.max.y+view.min.y)/2;
+ camera.left=cx-half*aspect;camera.right=cx+half*aspect;camera.top=cy+half;camera.bottom=cy-half;camera.near=.1;camera.far=100;camera.updateProjectionMatrix();
+}
 
 // Unlock one audio context inside the user's gesture, then play embedded clips
 // through it even when a walk, animation or previous sentence ends later.
